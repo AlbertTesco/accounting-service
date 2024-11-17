@@ -1,6 +1,5 @@
 from typing import List, Optional
-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
@@ -20,7 +19,7 @@ class ProjectOut(BaseModel):
     name: str
     parent_id: Optional[int] = None
     parent_project: Optional['ProjectOut'] = None
-    subprojects: List['ProjectOut'] = []
+    subprojects: List['ProjectOut'] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

@@ -50,7 +50,6 @@ async def is_assignment_allowed(db: AsyncSession, employee: EmployeeORM, project
                 "" if is_valid else "Ранг 3: нельзя участвовать более чем в 2 верхнеуровневых проектах"
             )
 
-        # Если это подпроект, проверяем лимит подпроектов для соответствующего верхнеуровневого проекта
         for top_level_project in top_level_projects:
             if await is_subproject(project, top_level_project, db):
                 is_valid = subprojects_count.get(top_level_project.id, 0) < 2
@@ -58,7 +57,6 @@ async def is_assignment_allowed(db: AsyncSession, employee: EmployeeORM, project
                     "" if is_valid else "Ранг 3: нельзя участвовать более чем в 2 подпроектах одного верхнеуровневого проекта"
                 )
 
-        # Если подпроект не принадлежит ни одному верхнеуровневому проекту
         return False, "Ранг 3: подпроект не принадлежит верхнеуровневому проекту, в котором участвует сотрудник"
 
     if employee.rank == "4":
