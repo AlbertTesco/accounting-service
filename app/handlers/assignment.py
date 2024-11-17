@@ -1,32 +1,27 @@
-from fastapi import Depends, HTTPException, APIRouter
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from fastapi import Depends, APIRouter
 
-from app import database
-from app.database import get_db
-from app.models import ProjectORM, EmployeeORM, EmployeeProjectAssignmentORM
 from app.schemas.assignment import EmployeeProjectAssignmentCreate, EmployeeProjectAssignmentDelete, \
     EmployeeProjectAssignmentByRank
 from app.services.assignment_service import AssignmentService
-from app.utils.restrictions import is_assignment_allowed
 
 router = APIRouter()
 
 
 @router.post("/add-employee-to-project")
-async def add_employee_to_project(data: EmployeeProjectAssignmentCreate, db: AsyncSession = Depends(get_db)):
-    return await AssignmentService.add_employee_to_project(data, db)
+async def add_employee_to_project(data: EmployeeProjectAssignmentCreate,
+                                  service=Depends(AssignmentService.get_dependency)):
+    return await service.add_employee_to_project(data)
 
 
 @router.delete("/delete-employee-to-project")
 async def remove_employee_from_project(data: EmployeeProjectAssignmentDelete,
-                                       db: AsyncSession = Depends(database.get_db)):
-    return await remove_employee_from_project(data, db)
+                                       service=Depends(AssignmentService.get_dependency)):
+    return await service.remove_employee_from_project(data)
 
 
 @router.post("/assign-employees-by-rank/")
 async def assign_employees_by_rank(
         assignment_data: EmployeeProjectAssignmentByRank,
-        db: AsyncSession = Depends(get_db),
+        service=Depends(AssignmentService.get_dependency),
 ):
-    return await AssignmentService.assign_employees_by_rank(assignment_data, db)
+    return await service.assign_employees_by_rank(assignment_data)

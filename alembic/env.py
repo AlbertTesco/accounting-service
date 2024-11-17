@@ -1,6 +1,5 @@
 import os
 from logging.config import fileConfig
-
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy import pool
@@ -8,9 +7,10 @@ from alembic import context
 
 from app.models import Base  # Импорт моделей базы данных
 
-# Загрузка переменных окружения из .env
 load_dotenv()
+# Загрузка переменных окружения из .env
 DATABASE_URL = os.getenv("DATABASE_URL")
+print("DATABASE_URL:", DATABASE_URL)
 
 # Конфигурация alembic
 config = context.config

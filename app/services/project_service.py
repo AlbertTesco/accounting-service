@@ -1,22 +1,29 @@
 from typing import List
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from ..database import get_db
 from ..models import ProjectORM
 from ..schemas.project import ProjectOut, ProjectCreate
 
 
 class ProjectService:
-    @staticmethod
-    async def get_all_projects(db: AsyncSession) -> List[ProjectOut]:
+    def __init__(self, db):
+        self.db = db
+
+    @classmethod
+    def get_dependency(cls, db: AsyncSession = Depends(get_db)):
+        return cls(db)
+
+    async def get_all_projects(self) -> List[ProjectOut]:
         """
         Получает список всех верхнеуровневых проектов с их подпроектами.
         """
         # Получение верхнеуровневых проектов
-        result = await db.execute(
+        result = await self.db.execute(
             select(ProjectORM)
             .options(selectinload(ProjectORM.parent))
             .filter(ProjectORM.parent_id.is_(None))
@@ -30,7 +37,7 @@ class ProjectService:
 
         for project in db_projects:
             # Получение подпроектов для текущего верхнеуровневого проекта
-            subprojects = await db.execute(
+            subprojects = await self.db.execute(
                 select(ProjectORM).filter(ProjectORM.parent_id == project.id)
             )
             subprojects = subprojects.scalars().all()
@@ -54,18 +61,17 @@ class ProjectService:
 
         return projects_out
 
-    @staticmethod
-    async def create_project(project: ProjectCreate, db: AsyncSession) -> ProjectOut:
+    async def create_project(self, project: ProjectCreate) -> ProjectOut:
         """
         Создает новый проект.
         """
         # Создание объекта ORM
         db_project = ProjectORM(name=project.name, parent_id=project.parent_id)
-        db.add(db_project)
+        self.db.add(db_project)
 
         # Коммит изменений и обновление объекта
-        await db.commit()
-        await db.refresh(db_project)
+        await self.db.commit()
+        await self.db.refresh(db_project)
 
         # Возврат объекта схемы
         return ProjectOut(
@@ -74,8 +80,7 @@ class ProjectService:
             parent_id=db_project.parent_id
         )
 
-    @staticmethod
-    async def get_project(project_id: int, db: AsyncSession) -> ProjectOut:
+    async def get_project(self, project_id: int) -> ProjectOut:
         """
         Получает проект с указанным ID, включая родительский и дочерние проекты.
         """
@@ -85,7 +90,7 @@ class ProjectService:
             .filter(ProjectORM.id == project_id)
             .options(selectinload(ProjectORM.parent), selectinload(ProjectORM.subprojects))
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_project = result.scalar_one_or_none()
 
         if db_project is None:
@@ -115,19 +120,18 @@ class ProjectService:
             subprojects=subprojects
         )
 
-    @staticmethod
-    async def delete_project(project_id: int, db: AsyncSession) -> dict:
+    async def delete_project(self, project_id: int) -> dict:
         """
         Удаляет проект с указанным ID.
         """
         # Поиск проекта
-        result = await db.execute(select(ProjectORM).filter(ProjectORM.id == project_id))
+        result = await self.db.execute(select(ProjectORM).filter(ProjectORM.id == project_id))
         db_project = result.scalar_one_or_none()
 
         if db_project is None:
             raise HTTPException(status_code=404, detail="Project not found")
 
         # Удаление проекта
-        await db.delete(db_project)
-        await db.commit()
+        await self.db.delete(db_project)
+        await self.db.commit()
         return {"message": "Project deleted successfully"}

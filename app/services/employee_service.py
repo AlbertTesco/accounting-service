@@ -1,31 +1,37 @@
+from fastapi import HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app import models
-from app.models import EmployeeORM, EmployeeProjectAssignmentORM
-from app.schemas.employee import EmployeeCreate, EmployeeOut
 from sqlalchemy.future import select
-from fastapi import HTTPException
 from sqlalchemy.orm import selectinload
 
+from app import models
+from app.database import get_db
+from app.models import EmployeeORM, EmployeeProjectAssignmentORM
+from app.schemas.employee import EmployeeCreate, EmployeeOut
 from app.schemas.project import ProjectOut
 
 
 class EmployeeService:
-    @staticmethod
-    async def create_employee(employee: EmployeeCreate, db: AsyncSession) -> EmployeeOut:
+
+    def __init__(self, db):
+        self.db = db
+
+    @classmethod
+    def get_dependency(cls, db: AsyncSession = Depends(get_db)):
+        return cls(db)
+
+    async def create_employee(self, employee: EmployeeCreate) -> EmployeeOut:
         db_employee = models.EmployeeORM(name=employee.name, rank=employee.rank)
-        db.add(db_employee)
-        await db.commit()
-        await db.refresh(db_employee)
+        self.db.add(db_employee)
+        await self.db.commit()
+        await self.db.refresh(db_employee)
         return EmployeeOut(id=db_employee.id, name=db_employee.name, rank=db_employee.rank, projects=[])
 
-    @staticmethod
-    async def get_employees(db: AsyncSession):
+    async def get_employees(self):
         query = (
             select(EmployeeORM)
             .options(selectinload(EmployeeORM.projects).selectinload(EmployeeProjectAssignmentORM.project))
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_employee = result.scalars()
 
         if not db_employee:
@@ -45,15 +51,14 @@ class EmployeeService:
             for employee in db_employee
         ]
 
-    @staticmethod
-    async def get_employee(employee_id: int, db: AsyncSession) -> EmployeeOut:
+    async def get_employee(self, employee_id: int) -> EmployeeOut:
         query = (
             select(EmployeeORM)
             .filter(EmployeeORM.id == employee_id)
             .options(selectinload(EmployeeORM.projects).selectinload(EmployeeProjectAssignmentORM.project))
         )
 
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_employee = result.scalar_one_or_none()
 
         if not db_employee:
@@ -64,42 +69,39 @@ class EmployeeService:
 
         return EmployeeOut(id=db_employee.id, name=db_employee.name, rank=db_employee.rank, projects=projects)
 
-    @staticmethod
-    async def update_employee(employee_id: int, updated_employee: EmployeeCreate, db: AsyncSession):
+    async def update_employee(self, employee_id: int, updated_employee: EmployeeCreate):
         query = (
             select(EmployeeORM)
             .filter(EmployeeORM.id == employee_id)
             .options(selectinload(EmployeeORM.projects).selectinload(EmployeeProjectAssignmentORM.project))
         )
 
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_employee = result.scalar_one_or_none()
         projects = [ProjectOut(id=item.project.id, name=item.project.name) for item in
                     db_employee.projects]
-        db.add(db_employee)
+        self.db.add(db_employee)
         if not db_employee:
             raise HTTPException(status_code=404, detail="Employee not found")
 
         db_employee.name = updated_employee.name
         db_employee.rank = updated_employee.rank
-        await db.commit()
-        await db.refresh(db_employee)
+        await self.db.commit()
+        await self.db.refresh(db_employee)
         return EmployeeOut(id=db_employee.id, name=db_employee.name, rank=db_employee.rank,
                            projects=projects)
 
-
-    @staticmethod
-    async def delete_employee(employee_id: int, db: AsyncSession):
+    async def delete_employee(self, employee_id: int):
         query = (
             select(EmployeeORM)
             .filter(EmployeeORM.id == employee_id)
             .options(selectinload(EmployeeORM.projects))
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_employee = result.scalar_one_or_none()
         if not db_employee:
             raise HTTPException(status_code=404, detail="EmployeeORM not found")
 
-        await db.delete(db_employee)
-        await db.commit()
+        await self.db.delete(db_employee)
+        await self.db.commit()
         return {"message": "Employee deleted successfully"}

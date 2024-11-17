@@ -1,23 +1,30 @@
+from fastapi import HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
 from app import models
+from app.database import get_db
 from app.models import EmployeeORM, ProjectORM, EmployeeProjectAssignmentORM
 from app.schemas.assignment import EmployeeProjectAssignmentCreate, EmployeeProjectAssignmentDelete, \
     EmployeeProjectAssignmentByRank
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from fastapi import HTTPException
-
 from app.utils.restrictions import is_assignment_allowed
 
 
 class AssignmentService:
 
-    @staticmethod
-    async def add_employee_to_project(data: EmployeeProjectAssignmentCreate, db: AsyncSession):
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    @classmethod
+    def get_dependency(cls, db: AsyncSession = Depends(get_db)):
+        return cls(db)
+
+    async def add_employee_to_project(self, data: EmployeeProjectAssignmentCreate):
         query = (
             select(ProjectORM)
             .filter(ProjectORM.id == data.project_id)
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_project = result.scalar_one_or_none()
         if not db_project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -26,7 +33,7 @@ class AssignmentService:
             select(EmployeeORM)
             .filter(EmployeeORM.id == data.employee_id)
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_employee = result.scalar_one_or_none()
         if not db_employee:
             raise HTTPException(status_code=404, detail="Employee not found")
@@ -36,31 +43,31 @@ class AssignmentService:
             .filter(models.EmployeeProjectAssignmentORM.project_id == data.project_id,
                     models.EmployeeProjectAssignmentORM.employee_id == data.employee_id)
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         existing_assignment = result.scalar_one_or_none()
 
         if existing_assignment:
             raise HTTPException(status_code=400, detail="EmployeeORM already assigned to this project")
 
         if not data.ignore_conflicts:
-            is_allowed, conflict_reason = await is_assignment_allowed(db=db, employee=db_employee, project=db_project)
+            is_allowed, conflict_reason = await is_assignment_allowed(db=self.db, employee=db_employee,
+                                                                      project=db_project)
             if not is_allowed:
                 raise HTTPException(status_code=400, detail=conflict_reason)
 
         new_assignment = models.EmployeeProjectAssignmentORM(employee_id=data.employee_id, project_id=data.project_id)
 
-        db.add(new_assignment)
-        await db.commit()
+        self.db.add(new_assignment)
+        await self.db.commit()
 
         return {"message": "Employee added to project successfully"}
 
-    @staticmethod
-    async def remove_employee_from_project(data: EmployeeProjectAssignmentDelete, db: AsyncSession):
+    async def remove_employee_from_project(self, data: EmployeeProjectAssignmentDelete):
         query = (
             select(ProjectORM)
             .filter(ProjectORM.id == data.project_id)
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_project = result.scalar_one_or_none()
         if not db_project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -69,7 +76,7 @@ class AssignmentService:
             select(EmployeeORM)
             .filter(EmployeeORM.id == data.employee_id)
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         db_employee = result.scalar_one_or_none()
 
         if not db_employee:
@@ -81,25 +88,24 @@ class AssignmentService:
                     EmployeeProjectAssignmentORM.employee_id == data.employee_id)
         )
 
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         existing_assignment = result.scalar_one_or_none()
 
         if not existing_assignment:
             raise HTTPException(status_code=404, detail="Assignment not found")
 
-        await db.delete(existing_assignment)
-        await db.commit()
+        await self.db.delete(existing_assignment)
+        await self.db.commit()
         return {"message": "Employee removed from project successfully"}
 
-    @staticmethod
-    async def assign_employees_by_rank(assignment_data: EmployeeProjectAssignmentByRank, db: AsyncSession):
-        result = await db.execute(select(ProjectORM).filter(ProjectORM.id == assignment_data.project_id))
+    async def assign_employees_by_rank(self, assignment_data: EmployeeProjectAssignmentByRank):
+        result = await self.db.execute(select(ProjectORM).filter(ProjectORM.id == assignment_data.project_id))
         project = result.scalar_one_or_none()
 
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        result = await db.execute(select(EmployeeORM).filter(EmployeeORM.rank == assignment_data.rank))
+        result = await self.db.execute(select(EmployeeORM).filter(EmployeeORM.rank == assignment_data.rank))
         employees = result.scalars().all()
 
         if not employees:
@@ -107,7 +113,7 @@ class AssignmentService:
 
         skipped_employees = []
         for employee in employees:
-            is_allowed, conflict_details = await is_assignment_allowed(db, employee, project)
+            is_allowed, conflict_details = await is_assignment_allowed(self.db, employee, project)
 
             if not is_allowed and not assignment_data.ignore_conflicts:
                 skipped_employees.append({
@@ -121,9 +127,9 @@ class AssignmentService:
                 employee_id=employee.id,
                 project_id=project.id,
             )
-            db.add(new_assignment)
+            self.db.add(new_assignment)
 
-        await db.commit()
+        await self.db.commit()
 
         return {
             "message": f"Employees with rank {assignment_data.rank} processed for project {assignment_data.project_id}",

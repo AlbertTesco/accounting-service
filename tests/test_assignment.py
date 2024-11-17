@@ -1,60 +1,10 @@
-import tempfile
-
-import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
-from app.main import app
-from app.models import ProjectORM, Base, EmployeeORM
+from app.models import ProjectORM, EmployeeORM
 from app.schemas.assignment import EmployeeProjectAssignmentCreate
-from app.schemas.employee import EmployeeCreate
 
 
-@pytest.fixture(scope="function")
-async def db_session():
-    temp_dir = tempfile.TemporaryDirectory()
-    DATABASE_URL = f"sqlite+aiosqlite:///{temp_dir.name}/test.db"
-    engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-
-    # Создаем сессию для работы с базой данных
-    SessionFactory = sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-
-    async with engine.begin() as conn:
-        # Создаем все таблицы перед каждым тестом
-        await conn.run_sync(Base.metadata.create_all)
-
-    async_session = SessionFactory()
-    try:
-        # Возвращаем сессию для теста
-        yield async_session
-    finally:
-        await async_session.rollback()
-        await async_session.close()
-        temp_dir.cleanup()
-
-
-# Фикстура для тестового клиента
-@pytest.fixture
-async def client(db_session):
-    async def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    async with AsyncClient(app=app, base_url="http://127.0.0.1:8000/api") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
 async def test_is_assignment_allowed_rank_1(client: AsyncClient, db_session: AsyncSession):
     # Создаем проект
     project = ProjectORM(name="New Project", parent_id=None)
@@ -78,7 +28,6 @@ async def test_is_assignment_allowed_rank_1(client: AsyncClient, db_session: Asy
     assert response.json() == {"message": "Employee added to project successfully"}
 
 
-@pytest.mark.asyncio
 async def test_is_assignment_allowed_rank_2_limit_3_top_level_projects(client: AsyncClient, db_session: AsyncSession):
     # Создаем 3 верхнеуровневых проекта
     project_1 = ProjectORM(name="Project 1", parent_id=None)
@@ -114,7 +63,6 @@ async def test_is_assignment_allowed_rank_2_limit_3_top_level_projects(client: A
     assert response.json() == {"detail": "Ранг 2: нельзя участвовать более чем в 3 верхнеуровневых проектах"}
 
 
-@pytest.mark.asyncio
 async def test_is_assignment_allowed_rank_3_limit_2_subprojects(client: AsyncClient, db_session: AsyncSession):
     # Создаем верхнеуровневый проект
     top_level_project = ProjectORM(name="Top Level Project", parent_id=None)
@@ -151,7 +99,6 @@ async def test_is_assignment_allowed_rank_3_limit_2_subprojects(client: AsyncCli
         "detail": "Ранг 3: подпроект не принадлежит верхнеуровневому проекту, в котором участвует сотрудник"}
 
 
-@pytest.mark.asyncio
 async def test_is_assignment_allowed_rank_3_with_existing_projects(client: AsyncClient, db_session: AsyncSession):
     # Создаем верхнеуровневый проект
     top_level_project = ProjectORM(name="Top Level Project", parent_id=None)
@@ -192,7 +139,6 @@ async def test_is_assignment_allowed_rank_3_with_existing_projects(client: Async
         "detail": "Ранг 3: подпроект не принадлежит верхнеуровневому проекту, в котором участвует сотрудник"}
 
 
-@pytest.mark.asyncio
 async def test_is_assignment_allowed_rank_4(client: AsyncClient, db_session: AsyncSession):
     # Создаем верхнеуровневый проект
     top_level_project = ProjectORM(name="Top Level Project", parent_id=None)

@@ -8,11 +8,10 @@ Base = declarative_base()
 class EmployeeORM(Base):
     __tablename__ = 'employees'
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    rank = Column(String, index=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    rank = Column(String)
 
-    # Указываем связь с промежуточной таблицей, через которую будет происходить связь с проектами
     projects = relationship("EmployeeProjectAssignmentORM", back_populates="employee")
 
     def __repr__(self):
@@ -22,11 +21,10 @@ class EmployeeORM(Base):
 class ProjectORM(Base):
     __tablename__ = 'projects'
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
     parent_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=True)
 
-    # Связь с родительским проектом
     parent = relationship(
         'ProjectORM',
         backref=backref(

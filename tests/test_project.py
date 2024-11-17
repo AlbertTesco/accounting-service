@@ -1,59 +1,11 @@
-import tempfile
-
-import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import sessionmaker
 
-from app.database import get_db
-from app.main import app
-from app.models import ProjectORM, Base
-
-
-@pytest.fixture(scope="function")
-async def db_session():
-    temp_dir = tempfile.TemporaryDirectory()
-    DATABASE_URL = f"sqlite+aiosqlite:///{temp_dir.name}/test.db"
-    engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-
-    # Создаем сессию для работы с базой данных
-    SessionFactory = sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-
-    async with engine.begin() as conn:
-        # Создаем все таблицы перед каждым тестом
-        await conn.run_sync(Base.metadata.create_all)
-
-    async_session = SessionFactory()
-    try:
-        # Возвращаем сессию для теста
-        yield async_session
-    finally:
-        await async_session.rollback()
-        await async_session.close()
-        temp_dir.cleanup()
-
-
-# Фикстура для тестового клиента
-@pytest.fixture
-async def client(db_session):
-    async def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    async with AsyncClient(app=app, base_url="http://127.0.0.1:8000/api") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
+from app.models import ProjectORM
 
 
 # Тестируем создание проекта
-@pytest.mark.asyncio
 async def test_create_project(client: AsyncClient, db_session: AsyncSession):
     project_data = {
         "name": "Test Project",
@@ -74,7 +26,6 @@ async def test_create_project(client: AsyncClient, db_session: AsyncSession):
     assert db_project.parent_id == project_data["parent_id"]
 
 
-@pytest.mark.asyncio
 async def test_get_project_with_parent(client: AsyncClient, db_session: AsyncSession):
     # Создаем родительский проект
     parent_project = ProjectORM(name="Parent Project", parent_id=None)
@@ -98,7 +49,6 @@ async def test_get_project_with_parent(client: AsyncClient, db_session: AsyncSes
 
 
 # Тестируем получение проекта с дочерними проектами
-@pytest.mark.asyncio
 async def test_get_project_with_subprojects(client: AsyncClient, db_session: AsyncSession):
     parent_project = ProjectORM(name="Parent Project", parent_id=None)
     db_session.add(parent_project)
@@ -125,7 +75,6 @@ async def test_get_project_with_subprojects(client: AsyncClient, db_session: Asy
 
 
 # Тестируем ошибку 404, если проект не найден
-@pytest.mark.asyncio
 async def test_get_project_not_found(client: AsyncClient):
     response = await client.get("/projects/9999")
 
@@ -133,7 +82,6 @@ async def test_get_project_not_found(client: AsyncClient):
     assert response.json() == {"detail": "Project not found"}
 
 
-@pytest.mark.asyncio
 async def test_get_all_projects_with_subprojects(client: AsyncClient, db_session: AsyncSession):
     parent_project = ProjectORM(name="Parent Project", parent_id=None)
     db_session.add(parent_project)
@@ -158,7 +106,6 @@ async def test_get_all_projects_with_subprojects(client: AsyncClient, db_session
 
 
 # Тестируем получение всех проектов без дочерних проектов
-@pytest.mark.asyncio
 async def test_get_all_projects_without_subprojects(client: AsyncClient, db_session: AsyncSession):
     parent_project = ProjectORM(name="Parent Project", parent_id=None)
     db_session.add(parent_project)
@@ -177,7 +124,6 @@ async def test_get_all_projects_without_subprojects(client: AsyncClient, db_sess
 
 
 # Тестируем, когда нет проектов в базе данных
-@pytest.mark.asyncio
 async def test_get_all_projects_no_projects(client: AsyncClient):
     response = await client.get("/projects/")
 
@@ -185,7 +131,6 @@ async def test_get_all_projects_no_projects(client: AsyncClient):
     assert response.json() == {"detail": "No projects found"}
 
 
-@pytest.mark.asyncio
 async def test_delete_project(client: AsyncClient, db_session: AsyncSession):
     # Создаем проект для теста
     project = ProjectORM(name="Test Project", parent_id=None)
@@ -210,7 +155,6 @@ async def test_delete_project(client: AsyncClient, db_session: AsyncSession):
     assert db_project is None
 
 
-@pytest.mark.asyncio
 async def test_delete_project_not_found(client: AsyncClient):
     # Пытаемся удалить несуществующий проект
     response = await client.delete(f"/projects/{9999}")

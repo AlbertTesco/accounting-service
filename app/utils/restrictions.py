@@ -29,53 +29,53 @@ async def is_assignment_allowed(db: AsyncSession, employee: EmployeeORM, project
         for project in top_level_projects
     }
 
-    # Проверяем ограничения по рангу
-    if employee.rank == "1":
-        return True, ""  # Нет ограничений
+    match employee.rank:
+        case "1":
+            return True, ""  # Нет ограничений
 
-    if employee.rank == "2":
-        # До 3 верхнеуровневых проектов, подпроекты не ограничены
-        is_valid = (
-                len(top_level_projects) < 3 or await is_subproject_of_any(project, top_level_projects, db)
-        )
-        return is_valid, (
-            "" if is_valid else "Ранг 2: нельзя участвовать более чем в 3 верхнеуровневых проектах"
-        )
-
-    if employee.rank == "3":
-        # Проверяем лимит верхнеуровневых проектов
-        if project.parent_id is None:
-            is_valid = len(top_level_projects) < 2
+        case "2":
+            # До 3 верхнеуровневых проектов, подпроекты не ограничены
+            is_valid = len(top_level_projects) < 3 or await is_subproject_of_any(project, top_level_projects, db)
             return is_valid, (
-                "" if is_valid else "Ранг 3: нельзя участвовать более чем в 2 верхнеуровневых проектах"
+                "" if is_valid else "Ранг 2: нельзя участвовать более чем в 3 верхнеуровневых проектах"
             )
 
-        for top_level_project in top_level_projects:
-            if await is_subproject(project, top_level_project, db):
-                is_valid = subprojects_count.get(top_level_project.id, 0) < 2
+        case "3":
+            # Проверяем лимит верхнеуровневых проектов
+            if project.parent_id is None:
+                is_valid = len(top_level_projects) < 2
                 return is_valid, (
-                    "" if is_valid else "Ранг 3: нельзя участвовать более чем в 2 подпроектах одного верхнеуровневого проекта"
+                    "" if is_valid else "Ранг 3: нельзя участвовать более чем в 2 верхнеуровневых проектах"
                 )
 
-        return False, "Ранг 3: подпроект не принадлежит верхнеуровневому проекту, в котором участвует сотрудник"
+            for top_level_project in top_level_projects:
+                if await is_subproject(project, top_level_project, db):
+                    is_valid = subprojects_count.get(top_level_project.id, 0) < 2
+                    return is_valid, (
+                        "" if is_valid else "Ранг 3: нельзя участвовать более чем в 2 подпроектах одного верхнеуровневого проекта"
+                    )
 
-    if employee.rank == "4":
-        # До 1 верхнеуровневого проекта и до 1 подпроекта
-        if len(top_level_projects) >= 1:
-            # Если есть верхнеуровневый проект, проверяем подпроект
-            is_valid_subproject = await is_subproject_with_limit(project, top_level_projects, subprojects_count, 1, db)
-            if is_valid_subproject:
-                return True, ""
-            else:
-                return False, "Ранг 4: нельзя участвовать более чем в 1 верхнеуровневом проекте и 1 подпроекте"
-        else:
-            # Если верхнеуровневого проекта нет, проверяем, не является ли проект верхнеуровневым
-            if project.parent_id is None:
-                return True, ""
-            else:
-                return False, "Ранг 4: нельзя назначить проект без основного верхнеуровневого проекта"
+            return False, "Ранг 3: подпроект не принадлежит верхнеуровневому проекту, в котором участвует сотрудник"
 
-    return False, "Неподдерживаемый ранг сотрудника"
+        case "4":
+            # До 1 верхнеуровневого проекта и до 1 подпроекта
+            if len(top_level_projects) >= 1:
+                # Если есть верхнеуровневый проект, проверяем подпроект
+                is_valid_subproject = await is_subproject_with_limit(project, top_level_projects, subprojects_count, 1,
+                                                                     db)
+                if is_valid_subproject:
+                    return True, ""
+                else:
+                    return False, "Ранг 4: нельзя участвовать более чем в 1 верхнеуровневом проекте и 1 подпроекте"
+            else:
+                # Если верхнеуровневого проекта нет, проверяем, не является ли проект верхнеуровневым
+                if project.parent_id is None:
+                    return True, ""
+                else:
+                    return False, "Ранг 4: нельзя назначить проект без основного верхнеуровневого проекта"
+
+        case _:
+            return False, "Неподдерживаемый ранг сотрудника"
 
 
 async def is_subproject_with_limit(project, top_level_projects, subprojects_count, limit, db):
